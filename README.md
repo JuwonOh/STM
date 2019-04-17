@@ -1,5 +1,4 @@
 # STM
-
 ## Introduction
 
 - 본 자료는 R에서 제공하는 Topic modeling 기법인 STM(Structural Topic Model)을 이용하여, 미국의 씽크탱크들의 글들을 살펴본 것이다. Topic modeling을 통해 각 씽크탱크들이 작성한 글의 주제와 핵심 어휘, 주제들 사이의 관계, 그리고 시간의 흐름에 따라 글의 주제들이 어떻게 변화하는지를 살펴보기 위해 작성되었다.
