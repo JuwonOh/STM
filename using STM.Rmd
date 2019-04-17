@@ -1,0 +1,216 @@
+---
+title: "Using stm with thinktank data 2018-07-01-2019-03-10"
+Author: "Juwon Oh"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+
+- 본 자료는 R에서 제공하는 Topic modeling 기법인 STM(Structural Topic Model)을 이용하여, 미국의 씽크탱크들의 글들을 살펴본 것이다. Topic modeling을 통해 각 씽크탱크들이 작성한 글의 주제와 핵심 어휘, 주제들 사이의 관계, 그리고 시간의 흐름에 따라 글의 주제들이 어떻게 변화하는지를 살펴보기 위해 작성되었다.
+- STM은 문서 단위의 covariate information를 이용한 topic modeling이다. LDA(Latent Dirichlet Allocation)와 유사하게, STM 역시 주어진 문서에 대해서 각 문서에 어떤 주제들이 존재하는지 확률적으로 제시하여 토픽별 단어의 분포와 문서별 토픽의 분포를 보여준다. STM은 기존의 LDA에 문서의 추가적인 meta 정보들 사이의 관계를 예측하게 만든다. 이 과정에서 STM은 topical prevalence와 topical content의 covariate를 사용한다. topical prevalence covariant는 한 문서가 한 토픽과 어떤 관련성을 가지고 있는가를 의미한다. topical content의 covariant는 메타데이터가 특정 토픽내의 단어 사용비율에 영향을 미친다. STM은 이 두가지 메카데이터의 covariate를 통해서 토픽을 예측한다.(Roberts, M. E., Stewart, B. M., & Tingley, D. 2014)
+
+## Data
+
+- 사용된 데이터들은 미국의 주요 씽크탱크들의 blog, article, news를 crawling 한 것이다. crawling 기간은 1차 북미정상회담과 2차 북미정상회담 사이인 2018년 7월 1일부터 2019년 3월 10일까지이다. 
+- 선택된 씽크탱크는 38 North, Stimson Center, Center for Strategic and International Studies, Cato Institute, Brookings Institution, RAND Corporation, Human Rights Watch, Freedom House, Bipartisan Policy Center, Center for a New American Security, Heritage Foundation, Woodrow Wilson International Center for Scholar로 총 12개이다. 
+- 씽크탱크를 크롤링한 코드와 예시는 전부 github(https://github.com/JuwonOh)에 올라와 있다. 
+
+## Loading package and data
+
+```{r, results='hide', warning=FALSE, message=FALSE}
+library(knitr)
+library(readr)
+library(stringr)
+library(tm)
+library(Cairo)
+library(quanteda)
+library(tidyverse)
+library(tidytext)
+library(lattice)
+library(stm)        # Package for sturctural topic modeling
+library(stmCorrViz) # Package for hierarchical correlation view of STMs
+
+# user specific working directory setup and loading thinktank data
+
+setwd("~/github/crawler 2019/GlobalDataCenter/Analysis")
+load("thinktank_data.RData")
+
+```
+
+## Preprocessing
+
+- STM을 사용하기 위해서는 데이터를 DFM(document-feature matrix)형식으로 만들어줘야 한다. STM 라이브러리 내부에 전처리를 지원하는 textProcessor 함수와 prepDocuments 함수가 있다. textProcessor의 경우 stemming과 stopword를 삭제해주지만, 전처리 과정에서 내가 원하는 단어들을 바꿔버린다. 가령 “KimJongUn”은 “kim”, “jong”, “un”이 된다. 이런 문제로 인해 따로 전처리하고, prepDocuments 함수만 이용했다.
+
+```{r}
+thinktank_data$source <- as.factor(thinktank_data$source)
+thinktank_data$date <- as.Date(thinktank_data$date)- as.Date('2018-07-01')
+data <- subset(thinktank_data, select = c(text, source, date, text_raw))
+corpus <- corpus(data$text)
+docvars(corpus, field='source') <- data$source
+docvars(corpus, field='date') <- as.integer(data$date)
+
+# convert dfm
+dfm <- dfm(dfm(corpus,
+        tolower=F,
+        stem=F))
+stmdfm <- convert(dfm, to = "stm", docvars = docvars(corpus))
+
+# Savinf meta data
+out <- prepDocuments(stmdfm$documents, stmdfm$vocab, stmdfm$meta, lower.thresh = 15)
+
+docs <- out$documents
+vocab <- out$vocab
+meta <- out$meta
+
+```
+
+## Using stm
+
+```{r, results='hide', warning=FALSE}
+seed = sample(1:10000, 1)
+thinktankPrevFit <- stm(out$documents, out$vocab, K=10, prevalence=~source+s(date),  max.em.its=75, data=out$meta,
+                        init.type="Spectral", seed=seed)
+```
+
+## Understand and Explain
+
+### Proportion of topics
+
+- 전체 문서에서 각 토픽들이 차지하는 비중을 살펴보자.
+
+```{r}
+par(bty="n",col="grey40",lwd=5)
+plot(thinktankPrevFit, type="summary", xlim=c(0,.4))
+```
+### Keywords in topics
+
+- 각 토픽에서 주요한 단어들을 볼 수 있다.
+
+```{r, fig.width=10, fig.height=8}
+plot(thinktankPrevFit, type="labels", topics=c(4,7,5,3,1,8,2))
+```
+
+- sageLabels함수를 통해서 각 토픽에서 중요한 단어를 뽑아내는게 가능하다. sagelabel 함수는 중요도를 평가하는데 LDA와 동일하게 Highest Prob, FREX, LIFT, score라는 척도를 사용한다.
+- FREX(“FRequency and EXclusivity)는 그들의 전체빈도와 주제에서 그것들이 얼마나 배제적인가(exclusive)를 기준으로 가중치를 부여한다. Lift는 다른 토픽들에서 덜 등장하는 단어들에 더 큰 가중치를 부여한다.
+
+```{r}
+print(sageLabels(thinktankPrevFit))
+```
+
+### Topics labeling 
+
+ - 위 토픽에 제시된 어휘를 기반으로 주제들의 의미를 부여했다.
+ 
+- topic 1: China`s economic threat 
+- topic 2: Probably noise
+- topic 3: Noise or thinkthank`s report
+- topic 4: Asian-Pacific region
+- topic 5: Northkorea Kimjongun
+- topic 6: Security measure of US
+- topic 7: Denuclearization of northkorea 
+- topic 8: Economic problem in US
+- topic 9: Israel problem
+- topic 10: Humanright issue
+
+
+ - STM은 양의 상관관계를 가지고 있는 토픽들을 보여준다. 양의 상관관계를 보이는 건 topic5와 topic7, topic1과 topic8 그리고 topic10이다.
+
+```{r, fig.width=8, fig.height=8}
+mod.out.corr <- topicCorr(thinktankPrevFit)
+plot(mod.out.corr,  
+     topics = c(1:10),
+     vlabels = c('topic 1: china`s economic threat', 'topic 2: probably noise', 'topic 3: noise or thinkthank`s report', 'topic 4: asian-pacific region', 'topic 5: northkorea and kimjongun', 'topic 6: security measure of US', 'topic 7: denuclearization of northkorea', 'topic 8: economic problem in US', 'topic 9: Israel problem', 'topic 10: humanright issue'))
+```
+
+### EstimateEffect
+
+ - STM은 estimateEffect함수를 통해서 topical prevalence와 메타데이터들 사이의 관계를 관측한다. 사용자는 메타데이터의 변수를 지정하여 topic들을 estimate 한다. 이를 통해 특정 주제에 대한 문서의 비율을 볼 수 있으며, 주제에 따라 변수들이 어떤 상관관계를 가졌는지, 그 정도가 시간의 흐름에 따라 어떻게 변화하는지 볼 수 있다.
+ - estimateEffect 함수의 결과는 회귀 분석의 결과와 비슷하게 정리된다.
+ - 첫번째 예시는 토픽과 변수(씽크탱크)의 상관관계를 살펴본 것이다. Heritage foundation과 38North를 비교했다.
+ 
+```{r, results='hide', warning=FALSE}
+out$meta$source<- as.character(out$meta$source)
+prep <- estimateEffect(1:10 ~ source+s(date), thinktankPrevFit, meta=out$meta, 
+                       uncertainty="Global")
+```
+
+```{r, fig.width=10, fig.height=8}
+plot(prep, covariate="source", topics=c(4, 7, 5, 1,8), model=thinktankPrevFit, 
+     method="difference", cov.value1="heritage", cov.value2='n38',
+     xlab="Heritage vs. 38North", main="Effect of Heritage vs. 38North",
+     xlim=c(-.30,.30), labeltype ="custom", custom.labels=c('Asian-Pacific region', 'Denuclearization of Northkorea ', 'Northkorea and kimjongun', 'China`s economic threat', 'Economic problem in US'))
+```
+
+- STM은 estimateEffect함수를 통해서 topics/topical content와 메타데이터들 사이의 관계를 관측한다. 이를 통해 특정 topic이 어떤 씽크탱크에 의해 더 많이 사용되었는가와 특정 씽크탱크가 특정 토픽을 어떻게 기술하는가를 볼 수 있다. 여기서는 Heritage foundation과 38North를 비교했다.
+
+```{r, fig.width=10, fig.height=8}
+
+plot(thinktankPrevFit, type="perspectives", topics=c(1,7))
+plot(thinktankPrevFit, type="perspectives", topics=c(5,7))
+```
+ 
+ - 시간의 흐름에 따라 전체문서에서 각 topic prevalence의 비중이 어떻게 변화했는지를 살펴보자.
+
+```{r, fig.width=10, fig.height=24}
+par(mfrow=c(4,2))
+topics = 10
+monthseq <- seq(from=as.Date("2018-07-01"), to=as.Date("2019-03-01"), by="month")
+monthnames <- months(monthseq)
+
+model.stm.labels <- labelTopics(thinktankPrevFit, 1:topics)
+labelsname <- c('topic 1: china`s economic threat', 'topic 2: probably noise', 'topic 3: noise or thinkthank`s report', 'topic 4: asian-pacific region', 'topic 5: northkorea and kimjongun', 'topic 6: security measure of US', 'topic 7: denuclearization of northkorea', 'topic 8: economic problem in US', 'topic 9: Israel problem', 'topic 10: humanright issue')
+
+for (i in c(1,4:10))
+{
+  plot(prep, "date", method="continuous", topics = i, main = labelsname[i], printlegend = F,
+       xaxt="n", xlab="Time", ylim=c(-.10,.30))
+  axis(1, at=as.numeric(monthseq)-min(as.numeric(monthseq)), labels=monthnames)
+}
+```
+
+- 지금까지는 topic prevalence를 통해서 토픽들을 살펴보았다면, content를 추가해서 살펴보자. topical content 변수를 사용하면, 각기 다른  씽크탱크들이 특정한 토픽에 관해 이야기할 때 사용하ㄴ 단어들을 볼 수 있다.
+
+```{r, results='hide', warning=FALSE}
+thinktankContent <- stm(out$documents, out$vocab, K=10, prevalence=~source+s(date), 
+                       content=~source, max.em.its=75, data=out$meta, 
+                       init.type="Spectral", seed=8458159)
+```
+
+```{r, fig.width=10, fig.height=24}
+par(mfrow=c(4,2))
+for (i in c(1,4:10))
+{
+  plot(thinktankContent, type="perspectives", topics= i, main = labelsname[i])
+}
+```
+
+### woldcloud
+
+ - 일반적인 워드클라우드역시 지원한다.
+
+```{r, fig.width=10, fig.height=6}
+cloud(thinktankContent, topic=7)
+```
+
+### distribution map of document-topic proportions
+
+ - 각 토픽에 영향을 주는 단어들의 분포를 보여준다.
+ 
+```{r, fig.width=10, fig.height=7}
+plot(thinktankPrevFit, type="hist")
+```
+
+## reference
+
+- Roberts, M. E., Stewart, B. M., & Tingley, D. (2014). stm: R package for structural topic models. R package, 1, 12.
+- Grimmer, J., & Stewart, B. M. (2013). Text as data: The promise and pitfalls of automatic content analysis methods for political texts. Political analysis, 21(3), 267-297.
+- http://www.structuraltopicmodel.com/
+- https://juliasilge.com/blog/sherlock-holmes-stm/
+- https://juliasilge.com/blog/sherlock-holmes-stm/
+- https://juliasilge.com/blog/evaluating-stm/
+- https://github.com/ChangdongOh/mediaframe_sexualviolence/
+- https://milesdwilliams15.github.io/Better-Graphics-for-the-stm-Package-in-R/
+- https://rpubs.com/mjlassila/yle-hs-topic-modeling
+- https://rpubs.com/cbpuschmann/un-stm
