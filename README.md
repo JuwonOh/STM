@@ -8,5 +8,5 @@
 
 - 사용된 데이터들은 미국의 주요 씽크탱크들의 blog, article, news를 crawling 한 것이다. crawling 기간은 1차 북미정상회담과 2차 북미정상회담 사이인 2018년 7월 1일부터 2019년 3월 10일까지이다. 
 - 선택된 씽크탱크는 38 North, Stimson Center, Center for Strategic and International Studies, Cato Institute, Brookings Institution, RAND Corporation, Human Rights Watch, Freedom House, Bipartisan Policy Center, Center for a New American Security, Heritage Foundation, Woodrow Wilson International Center for Scholar로 총 12개이다. 
-- 씽크탱크를 크롤링한 코드와 예시는 전부 github(https://github.com/JuwonOh)에 올라와 있다. 
-- 실제 Rmarkdown을 사용한 결과는 rpubs에서 보실 수 있습니다.
+- 씽크탱크를 크롤링한 코드와 예시는 전부 github(https://github.com/JuwonOh) 에 올라와 있다. 
+- 실제 Rmarkdown을 사용한 결과는 rpubs(https://rpubs.com/cbpuschmann/un-stm) 에서 보실 수 있습니다.
